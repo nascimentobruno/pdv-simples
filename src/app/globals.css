@@ -1,0 +1,48 @@
+@import "tailwindcss";
+@reference "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+}
+
+* {
+  @apply border-zinc-800;
+}
+
+.container-app {
+  @apply mx-auto max-w-6xl px-4;
+}
+
+.card {
+  @apply rounded-2xl border bg-zinc-900/40 backdrop-blur px-4 py-4 shadow-sm;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-semibold
+  border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-900 transition;
+}
+
+.btn-primary {
+  @apply bg-white text-zinc-950 border-white hover:opacity-90;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-200;
+}
+
+.input {
+  @apply w-full rounded-xl bg-zinc-950/40 border border-zinc-800 px-3 py-2 outline-none
+  focus:border-zinc-500;
+}
+
+.muted {
+  @apply text-zinc-400;
+}
