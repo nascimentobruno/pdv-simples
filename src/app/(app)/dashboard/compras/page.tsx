@@ -1,26 +1,43 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Compra,
-  ItemCompra,
-  Variacao,
-  Produto,
-  Estoque,
-  loadDB,
-  saveDB,
-  uid,
-  num,
-  int,
-  fmtBRL,
-} from "@/lib/store";
+import { requireAuthOrRedirect, canSeeCost, logoutUser } from "@/lib/auth";
+import { Compra, ItemCompra, loadDB, saveDB, uid, num, int, fmtBRL, Role } from "@/lib/store";
 
 export default function ComprasPage() {
-  const [compras, setCompras] = useState<Compra[]>([]);
-  const [itensCompra, setItensCompra] = useState<ItemCompra[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [variacoes, setVariacoes] = useState<Variacao[]>([]);
-  const [estoque, setEstoque] = useState<Estoque[]>([]);
+  // ✅ auth guard + controle de permissão
+  const [role, setRole] = useState<Role | null>(null);
+  const [userName, setUserName] = useState<string>("");
+
+  useEffect(() => {
+    const u = requireAuthOrRedirect("/login");
+    if (u) {
+      setRole(u.role);
+      setUserName(u.nome);
+    }
+  }, []);
+
+  const showCost = role ? canSeeCost(role) : true;
+
+  // ✅ 1) Primeiro calcula o initial
+  const initial = useMemo(() => {
+    const db = loadDB();
+    return {
+      compras: [...db.compras].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+      itensCompra: db.itensCompra,
+      produtos: db.produtos,
+      variacoes: db.variacoes,
+      estoque: db.estoque,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ 2) States
+  const [compras, setCompras] = useState(initial.compras);
+  const [itensCompra, setItensCompra] = useState(initial.itensCompra);
+  const [produtos, setProdutos] = useState(initial.produtos);
+  const [variacoes, setVariacoes] = useState(initial.variacoes);
+  const [estoque, setEstoque] = useState(initial.estoque);
 
   const [compraAtualId, setCompraAtualId] = useState<string>("");
 
@@ -33,27 +50,22 @@ export default function ComprasPage() {
     custoUnit: "",
   });
 
-  useEffect(() => {
-    const db = loadDB();
-    setCompras(db.compras.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
-    setItensCompra(db.itensCompra);
-    setProdutos(db.produtos);
-    setVariacoes(db.variacoes);
-    setEstoque(db.estoque);
-  }, []);
-
   function persist(next: Partial<ReturnType<typeof loadDB>>) {
     const db = loadDB();
     const updated = { ...db, ...next };
     saveDB(updated);
-    setCompras(updated.compras.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
+
+    setCompras([...updated.compras].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
     setItensCompra(updated.itensCompra);
     setProdutos(updated.produtos);
     setVariacoes(updated.variacoes);
     setEstoque(updated.estoque);
   }
 
-  const compraAtual = useMemo(() => compras.find((c) => c.id === compraAtualId) || null, [compras, compraAtualId]);
+  const compraAtual = useMemo(
+    () => compras.find((c) => c.id === compraAtualId) || null,
+    [compras, compraAtualId]
+  );
 
   const itensDaCompraAtual = useMemo(() => {
     if (!compraAtual) return [];
@@ -180,7 +192,6 @@ export default function ComprasPage() {
       return;
     }
 
-    // 1) Atualiza estoque + custo médio (se não travado)
     const db = loadDB();
 
     const nextEstoque = [...db.estoque];
@@ -193,7 +204,6 @@ export default function ComprasPage() {
 
       const v = nextVariacoes[vIndex];
 
-      // estoque atual antes da entrada
       let e = nextEstoque.find((x) => x.variacaoId === item.variacaoId);
       if (!e) {
         e = {
@@ -209,18 +219,16 @@ export default function ComprasPage() {
       const oldQty = e.quantidadeAtual;
       const addQty = item.qtd;
 
-      // custo médio ponderado (se não travado)
       if (!v.custoTravado) {
         const oldCost = v.custoMedio || 0;
-        const newCost = (oldCost * oldQty + item.custoUnit * addQty) / Math.max(1, oldQty + addQty);
+        const newCost =
+          (oldCost * oldQty + item.custoUnit * addQty) / Math.max(1, oldQty + addQty);
         nextVariacoes[vIndex] = { ...v, custoMedio: Number(newCost.toFixed(4)) };
       }
 
-      // entrada estoque
       e.quantidadeAtual = oldQty + addQty;
       e.updatedAt = new Date().toISOString();
 
-      // movimento
       nextMov.unshift({
         id: uid(),
         variacaoId: item.variacaoId,
@@ -232,19 +240,18 @@ export default function ComprasPage() {
       });
     }
 
-    // 2) Atualiza compra para CONFIRMADA + totais
-        const nextCompras = db.compras.map((c) =>
-        c.id === compraAtual.id
+    const nextCompras = db.compras.map((c) =>
+      c.id === compraAtual.id
         ? {
-        ...c,
-        frete: num(frete),
-        outrasDespesas: num(outras),
-        totalProdutos,
-        totalCompra,
-        status: "CONFIRMADA" as const,
-      }
-    : c
-);
+            ...c,
+            frete: num(frete),
+            outrasDespesas: num(outras),
+            totalProdutos,
+            totalCompra,
+            status: "CONFIRMADA" as const,
+          }
+        : c
+    );
 
     saveDB({
       ...db,
@@ -254,9 +261,8 @@ export default function ComprasPage() {
       compras: nextCompras,
     });
 
-    // 3) Recarrega states
     const refreshed = loadDB();
-    setCompras(refreshed.compras.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
+    setCompras([...refreshed.compras].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
     setItensCompra(refreshed.itensCompra);
     setProdutos(refreshed.produtos);
     setVariacoes(refreshed.variacoes);
@@ -269,14 +275,35 @@ export default function ComprasPage() {
     return variacoes
       .map((v) => {
         const p = produtos.find((x) => x.id === v.produtoId);
-        const label = `${p?.nome ?? "Produto"} • ${v.tamanho ?? "-"} • ${v.cor ?? "-"} (${fmtBRL(v.precoVenda)} | custo ${fmtBRL(v.custoMedio)})`;
+        const base = `${p?.nome ?? "Produto"} • ${v.tamanho ?? "-"} • ${v.cor ?? "-"}`;
+        const label = showCost
+          ? `${base} (${fmtBRL(v.precoVenda)} | custo ${fmtBRL(v.custoMedio)})`
+          : `${base} (${fmtBRL(v.precoVenda)})`;
         return { id: v.id, label };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [variacoes, produtos]);
+  }, [variacoes, produtos, showCost]);
 
   return (
     <div className="container-app space-y-6">
+      {/* ✅ HEADER USUÁRIO */}
+      <div className="card flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">Usuário: {userName || "—"}</div>
+          <div className="muted text-xs">Perfil: {role || "—"}</div>
+        </div>
+
+        <button
+          className="btn"
+          onClick={() => {
+            logoutUser();
+            window.location.href = "/login";
+          }}
+        >
+          Sair
+        </button>
+      </div>
+
       <div className="card">
         <h1 className="text-2xl md:text-3xl font-black tracking-tight">Compras</h1>
         <p className="muted mt-1 text-sm">
@@ -396,7 +423,9 @@ export default function ComprasPage() {
                   >
                     <option value="">Selecione a variação</option>
                     {opcoesVariacoes.map((o) => (
-                      <option key={o.id} value={o.id}>{o.label}</option>
+                      <option key={o.id} value={o.id}>
+                        {o.label}
+                      </option>
                     ))}
                   </select>
 
@@ -424,8 +453,8 @@ export default function ComprasPage() {
                       </p>
                       <p className="muted text-xs mt-1">
                         Estoque atual: {estoqueDaVariacao(variacaoSelecionada.id)?.quantidadeAtual ?? 0} •
-                        Preço venda: {fmtBRL(variacaoSelecionada.precoVenda)} •
-                        Custo atual: {fmtBRL(variacaoSelecionada.custoMedio)} •
+                        Preço venda: {fmtBRL(variacaoSelecionada.precoVenda)}
+                        {showCost ? ` • Custo atual: ${fmtBRL(variacaoSelecionada.custoMedio)}` : ""} •
                         {variacaoSelecionada.custoTravado ? "Custo travado" : "Custo recalculável"}
                       </p>
                     </div>
@@ -456,7 +485,8 @@ export default function ComprasPage() {
                                 {p?.nome ?? "Produto"} • {v?.tamanho ?? "-"} • {v?.cor ?? "-"}
                               </div>
                               <div className="muted text-xs mt-1">
-                                Qtd: {i.qtd} • Custo unit: {fmtBRL(i.custoUnit)} • Subtotal: {fmtBRL(i.subtotal)}
+                                Qtd: {i.qtd} • {showCost ? `Custo unit: ${fmtBRL(i.custoUnit)} • ` : ""}
+                                Subtotal: {fmtBRL(i.subtotal)}
                               </div>
                             </div>
 

@@ -2,12 +2,16 @@ import "./globals.css";
 
 export const metadata = {
   title: "PDV Simples",
-  description: "PDV, estoque, compras e relatórios — direto ao ponto.",
+  description: "Sistema PDV",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="pt-br">
+    <html lang="pt-BR">
       <body>{children}</body>
     </html>
   );

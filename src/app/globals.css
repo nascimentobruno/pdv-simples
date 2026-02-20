@@ -1,11 +1,11 @@
 @import "tailwindcss";
-@reference "tailwindcss";
 
 :root {
   color-scheme: dark;
 }
 
-html, body {
+html,
+body {
   height: 100%;
 }
 
